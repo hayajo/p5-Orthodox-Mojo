@@ -3,9 +3,6 @@ use Mojolicious::Lite;
 use Mojo::Util qw/slurp/;
 use Encode;
 
-my $templates_dir = [ app->home->rel_dir('resources') ];
-app->renderer->paths($templates_dir);
-
 plugin 'Directory' => {
     root       => app->home->rel_dir('resources'),
     auto_index => 0,
