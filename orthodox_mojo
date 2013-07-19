@@ -1,0 +1,27 @@
+#!/usr/bin/env perl
+use Mojolicious::Lite;
+use Mojo::Util qw/slurp/;
+use Encode;
+
+my $templates_dir = [ app->home->rel_dir('resources') ];
+app->renderer->paths($templates_dir);
+
+plugin 'Directory' => {
+    root       => app->home->rel_dir('resources'),
+    auto_index => 0,
+    dir_index  => [qw/index.html index.htm/],
+    handler    => sub { _handler(@_) },
+};
+
+sub _handler {
+    my ( $c, $path ) = @_;
+    if ( -f $path && $path =~ /\.epl$/ ) {
+        my ($format) = $path =~ m|(?:\.([^\.]+))?\.(?:[^\.]+)$|;
+        $format ||= 'txt';
+        my $epl = decode_utf8(slurp $path); # テンプレートはutf-8であることを期待します
+        # handlerを指定すると$selfがMojo::Templateになるので注意
+        $c->render( inline => $epl, format => $format );
+    }
+}
+
+app->start;
