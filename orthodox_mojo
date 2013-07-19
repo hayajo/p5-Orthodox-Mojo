@@ -13,6 +13,7 @@ plugin 'Directory' => {
 sub _handler {
     my ( $c, $path ) = @_;
     if ( -f $path && $path =~ /\.epl$/ ) {
+        return if ( $c->param('format') && $c->param('format') eq 'raw' );
         my ($format) = $path =~ m|(?:\.([^\.]+))?\.(?:[^\.]+)$|;
         $format ||= 'txt';
         my $epl = decode_utf8(slurp $path); # テンプレートはutf-8であることを期待します
