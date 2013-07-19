@@ -1,5 +1,7 @@
-%# eplからバイナリを吐く
-% use Mojo::Util qw/slurp/;
-% my $png = $self->app->home->rel_file('resources/img/glyphicons-halflings.png');
-%# finishしないとハンドラがクローズされないので注意
-% $self->write( slurp($png), sub { $_[0]->finish } );
+<%
+# eplからバイナリを吐く
+use Mojo::Util qw/slurp/;
+my $png = $self->app->home->rel_file('resources/img/glyphicons-halflings.png');
+# finishしないとハンドラがクローズされないので注意
+$self->write( slurp($png), sub { $_[0]->finish } );
+%>

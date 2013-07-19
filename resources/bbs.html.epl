@@ -1,21 +1,23 @@
-% use DBI;
-% use Encode;
-% my $db = $self->app->home->rel_file('db/bbs.db');
-% my $dbh = DBI->connect("dbi:SQLite:${db}", '', '');
-% my $title = "Simple BBS";
-% if ($self->req->method eq 'POST') {
-  % if ( $self->param('name') && $self->param('remenber') ) {
-    % $self->session(name => $self->param('name'));
-  % }
-  % if ( my $comment = $self->param('comment') ) {
-    % my $name = $self->param('name') || '名無しさん';
-    % my $sth = $dbh->prepare('insert into comments(name, `comment`) values(?, ?)');
-    % my $i = 1;
-    % map { $sth->bind_param($i++, $_) } ($name, $comment);
-    % $sth->execute;
-    % $self->redirect_to($self->req->url);
-  % }
-% }
+<%
+use DBI;
+use Encode;
+my $db    = $self->app->home->rel_file('db/bbs.db');
+my $dbh   = DBI->connect("dbi:SQLite:${db}", '', '');
+my $title = "Simple BBS";
+if ( $self->req->method eq 'POST' ) {
+    if ( $self->param('name') && $self->param('remenber') ) {
+        $self->session( name => $self->param('name') );
+    }
+    if ( my $comment = $self->param('comment') ) {
+        my $name = $self->param('name') || '名無しさん';
+        my $sth  = $dbh->prepare('insert into comments(name, `comment`) values(?, ?)');
+        my $i = 1;
+        map { $sth->bind_param( $i++, $_ ) } ( $name, $comment );
+        $sth->execute;
+        $self->redirect_to( $self->req->url );
+    }
+}
+%>
 <!DOCTYPE html>
 <html lang="ja">
   <head>
