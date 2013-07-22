@@ -1,9 +1,9 @@
 <%
 use DBI;
 use Encode;
+title "Simple BBS";
 my $db    = $self->app->home->rel_file('db/bbs.db');
 my $dbh   = DBI->connect("dbi:SQLite:${db}", '', '');
-my $title = "Simple BBS";
 if ( $self->req->method eq 'POST' ) {
     if ( $self->param('name') && $self->param('remenber') ) {
         $self->session( name => $self->param('name') );
@@ -22,7 +22,7 @@ if ( $self->req->method eq 'POST' ) {
 <html lang="ja">
   <head>
     <meta charset="utf-8">
-    <title><%= $title %></title>
+    <title><%= title %></title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link href="/css/bootstrap.css" rel="stylesheet">
     <link href="/css/bootstrap-responsive.css" rel="stylesheet">
@@ -40,7 +40,7 @@ if ( $self->req->method eq 'POST' ) {
     <div class="navbar navbar-inverse navbar-fixed-top">
       <div class=navbar-inner>
         <div class=container>
-          <a class="brand" href="<%= $self->req->url->path %>"><%= $title %></a>
+          <a class="brand" href="<%= $self->req->url %>"><%= title %></a>
         </div>
       </div>
     </div> <!-- navbar -->
