@@ -1,0 +1,126 @@
+<%
+use DBI;
+use Encode;
+use FormValidator::Lite;
+use Data::GUID::URLSafe;
+use Time::Piece::Plus;
+
+use constant DB => 'db/nopaste.db';
+
+# ラベルとエラーメッセージのHTMLを生成するヘルパ
+$self->app->helper(form_label => sub {
+  my ($self, $param) = @_;
+
+  my $params = $self->stash('params');
+  my $v      = $self->stash('v');
+
+  my $label = $params->{$param};
+  my $html  = "<label>${label}</label>";
+
+  if ($v && $v->is_error($param)) {
+    my $error = shift $v->get_error_messages_from_param($param);
+    $html .= sprintf('<p class="text-error">%s</p>', $error);
+
+  }
+  return $html;
+});
+
+title "nopaste";
+
+my $params = +{
+  title => 'タイトル',
+  body  => 'コード',
+};
+$self->stash(params => $params);
+
+my $v = FormValidator::Lite->new($self->req->body_params);
+$v->load_function_message('ja');
+$v->set_param_message(%$params);
+$self->stash(v => $v);
+
+if ( $self->req->method eq 'POST' ) {
+  $v->check(
+    title => [qw/NOT_NULL/],
+    body  => [qw/NOT_NULL/],
+  );
+  unless ($v->has_error) {
+    my $id = Data::GUID->new->as_base64_urlsafe;
+
+    my @binds = ();
+    push @binds, $id;
+    push @binds, $v->query->param('title');
+    push @binds, $v->query->param('body');
+    push @binds, Time::Piece::Plus->mysql_date;
+
+    my $db  = $self->app->home->rel_file(DB);
+    my $dbh = DBI->connect("dbi:SQLite:${db}", '', '');
+    my $sth = $dbh->prepare(
+      'INSERT INTO entry (id, title, body, created_at) VALUES (?, ?, ?, ?)'
+    );
+    my $i = 1;
+    map { $sth->bind_param( $i++, $_ ) } @binds;
+    $sth->execute;
+
+    # IDパラメータ付きでリダイレクト
+    $self->redirect_to($self->req->url->query(id => $id));
+  }
+}
+elsif ( my $id = $self->req->query_params->param('id') ) {
+  my $db  = $self->app->home->rel_file(DB);
+  my $dbh = DBI->connect("dbi:SQLite:${db}", '', '');
+  my $entry = $dbh->selectrow_hashref(
+    "SELECT * FROM entry WHERE id = ?",
+    {},
+    $id,
+  );
+  if ($entry) {
+    # 描画
+    die dumper $entry;
+  }
+  else {
+    return $self->render_not_found;
+  }
+}
+
+%>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title><%= title %></title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link href="/css/bootstrap.css" rel="stylesheet">
+  <link href="/css/bootstrap-responsive.css" rel="stylesheet">
+  <style type="text/css">
+    body {
+      padding-top: 60px;
+      padding-bottom: 40px;
+    }
+  </style>
+  <script src="/js/jquery-1.10.2.min.js"></script>
+</head>
+<body>
+  <div class="navbar navbar-inverse navbar-fixed-top">
+    <div class=navbar-inner>
+      <div class=container>
+        <a class="brand" href="<%= $self->req->url %>"><%= title %></a>
+      </div>
+    </div>
+  </div> <!-- navbar -->
+
+  <div class="container">
+    %= form_for $self->req->url => (method => 'POST') => begin
+      <fieldset>
+        %== form_label('title')
+        %= text_field 'title', (class => 'input-block-level')
+        %== form_label('body')
+        %= text_area 'body', rows => 20, (class => 'input-block-level')
+        <button type="submit" class="btn">投稿する</button>
+      </fiedset>
+    % end
+  </div><!-- container -->
+
+  <script src="/js/bootstrap.js"></script>
+  
+</body>
+</html>
