@@ -4,15 +4,25 @@ use Encode;
 use FormValidator::Lite;
 use Data::GUID::URLSafe;
 use Time::Piece::Plus;
+use IPC::Open3;
+use Text::VimColor;
 
-use constant DB => 'db/nopaste.db';
+use constant +{
+  DB       => 'db/nopaste.db',
+  VIM      => 'vim',
+  VIM_ARGS => [
+    '-N',
+    '-u', 'NONE',
+    '-i', 'NONE',
+    '-V1',
+    '-e',
+    '--cmd', ":echo \$VIMRUNTIME",
+    '--cmd', ":q",
+  ],
+};
 
-# ラベルとエラーメッセージのHTMLを生成するヘルパ
-$self->app->helper(form_label => sub {
-  my ($self, $param) = @_;
-
-  my $params = $self->stash('params');
-  my $v      = $self->stash('v');
+sub form_label {
+  my ($param, $params, $v) = @_;
 
   my $label = $params->{$param};
   my $html  = "<label>${label}</label>";
@@ -22,21 +32,40 @@ $self->app->helper(form_label => sub {
     $html .= sprintf('<p class="text-error">%s</p>', $error);
 
   }
+
   return $html;
-});
+}
+
+sub syntax {
+  my ($in, $out, $err) = (Symbol::gensym(), Symbol::gensym(), Symbol::gensym());
+
+  my $pid = IPC::Open3::open3($in, $out, $err, VIM() => @{ VIM_ARGS() });
+
+  close ($in);
+  close ($out);
+
+  my $err_out = do { local $/; <$err> };
+  chomp $err_out;
+
+  my $gotpid = waitpid($pid, 0);
+
+  my $error = $? >> 8;
+  die $! if ($error);
+
+  return [ map { m|([^/]+)\.vim$|; $1 } glob "${err_out}/syntax/*.vim" ];
+}
 
 title "nopaste";
 
 my $params = +{
-  title => 'タイトル',
-  body  => 'コード',
+  title    => 'タイトル',
+  body     => 'コード',
+  filetype => 'ファイルタイプ',
 };
-$self->stash(params => $params);
 
 my $v = FormValidator::Lite->new($self->req->body_params);
 $v->load_function_message('ja');
 $v->set_param_message(%$params);
-$self->stash(v => $v);
 
 if ( $self->req->method eq 'POST' ) {
   $v->check(
@@ -49,36 +78,44 @@ if ( $self->req->method eq 'POST' ) {
     my @binds = ();
     push @binds, $id;
     push @binds, $v->query->param('title');
+    push @binds, $v->query->param('filetype') || 'text';
     push @binds, $v->query->param('body');
     push @binds, Time::Piece::Plus->mysql_date;
 
     my $db  = $self->app->home->rel_file(DB);
     my $dbh = DBI->connect("dbi:SQLite:${db}", '', '');
+
     my $sth = $dbh->prepare(
-      'INSERT INTO entry (id, title, body, created_at) VALUES (?, ?, ?, ?)'
+      'INSERT INTO entry (id, title, filetype, body, created_at) VALUES (?, ?, ?, ?, ?)'
     );
     my $i = 1;
     map { $sth->bind_param( $i++, $_ ) } @binds;
     $sth->execute;
 
-    # IDパラメータ付きでリダイレクト
     $self->redirect_to($self->req->url->query(id => $id));
   }
 }
 elsif ( my $id = $self->req->query_params->param('id') ) {
   my $db  = $self->app->home->rel_file(DB);
   my $dbh = DBI->connect("dbi:SQLite:${db}", '', '');
+
   my $entry = $dbh->selectrow_hashref(
     "SELECT * FROM entry WHERE id = ?",
     {},
     $id,
   );
+
   if ($entry) {
-    # 描画
-    die dumper $entry;
+    $entry->{highlighted} = decode_utf8(
+      Text::VimColor->new(
+        string   => encode_utf8($entry->{body}),
+        filetype => $entry->{filetype},
+      )->html,
+    );
+    $self->stash(entry => $entry);
   }
   else {
-    return $self->render_not_found;
+    $self->res->code(404);
   }
 }
 
@@ -96,6 +133,13 @@ elsif ( my $id = $self->req->query_params->param('id') ) {
       padding-top: 60px;
       padding-bottom: 40px;
     }
+    .synSpecial { color: #c000c0; }
+    .synType { color: #008000; }
+    .synComment { color: #0000c0; }
+    .synPreProc { color: #c000c0; }
+    .synIdentifier { color: #008080; }
+    .synConstant { color: #c00000; }
+    .synStatement { color: #804000; }
   </style>
   <script src="/js/jquery-1.10.2.min.js"></script>
 </head>
@@ -103,24 +147,39 @@ elsif ( my $id = $self->req->query_params->param('id') ) {
   <div class="navbar navbar-inverse navbar-fixed-top">
     <div class=navbar-inner>
       <div class=container>
-        <a class="brand" href="<%= $self->req->url %>"><%= title %></a>
+        <a class="brand" href="<%= $self->req->url->path %>"><%= title %></a>
       </div>
     </div>
   </div> <!-- navbar -->
 
   <div class="container">
-    %= form_for $self->req->url => (method => 'POST') => begin
-      <fieldset>
-        %== form_label('title')
-        %= text_field 'title', (class => 'input-block-level')
-        %== form_label('body')
-        %= text_area 'body', rows => 20, (class => 'input-block-level')
-        <button type="submit" class="btn">投稿する</button>
-      </fiedset>
-    % end
+    % if (my $entry = $self->stash('entry')) {
+      <div class="row">
+        <div class="span12">
+          <h2><%= $entry->{title} %></h2>
+        </div>
+      </div>
+      <div class="row">
+        <div class="span12">
+          <pre><%== $entry->{highlighted} %></pre>
+        </div>
+      </div>
+    % } else {
+      %= form_for $self->req->url => (method => 'POST') => begin
+        <fieldset>
+          %== form_label('title', $params, $v)
+          %= text_field 'title', (class => 'input-block-level')
+          %== form_label('filetype', $params, $v)
+          %= select_field filetype => [ ['指定なし' => 'text'], @{syntax()} ]
+          %== form_label('body', $params, $v)
+          %= text_area 'body', rows => 20, (class => 'input-block-level')
+          <button type="submit" class="btn">投稿する</button>
+        </fiedset>
+      % end
+    % }
   </div><!-- container -->
 
   <script src="/js/bootstrap.js"></script>
-  
+
 </body>
 </html>
