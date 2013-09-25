@@ -1,0 +1,28 @@
+<%
+use Time::Piece;
+use Encode;
+%>
+%= decode_utf8 localtime->strftime("%Y年%m月%d日 %H:%M:%S");
+
+```
+use strict
+```
+
+企業|球団
+----|-----------
+DeNA|ベイスターズ
+楽天|イーグルス
+
+
+=apple=
+    苹果
+=banana=
+    香蕉
+=mango=
+    芒果
+
+- 林檎
+  - 綺麗な林檎
+  - 腐った林檎
+- 蜜柑
+- 芒果

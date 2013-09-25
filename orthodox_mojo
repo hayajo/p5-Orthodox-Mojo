@@ -2,6 +2,10 @@
 use Mojolicious::Lite;
 use Mojo::Util qw/slurp/;
 use Encode;
+use Text::Markdown::Discount qw/markdown/;
+use File::Basename qw/fileparse/;
+
+Text::Markdown::Discount::with_html5_tags();
 
 plugin 'Directory' => {
     root       => app->home->rel_dir('resources'),
@@ -12,14 +16,63 @@ plugin 'Directory' => {
 
 sub _handler {
     my ( $c, $path ) = @_;
-    if ( -f $path && $path =~ /\.epl?$/ ) {
-        return if ( $c->param('format') && $c->param('format') eq 'raw' );
-        my ($format) = $path =~ m|(?:\.([^\.]+))?\.(?:[^\.]+)$|; # <= "foo.html.epl" => "html"
-        $format ||= 'txt';
-        my $ep = decode_utf8(slurp $path); # テンプレートはutf-8であることを期待します
-        # handlerを指定すると$selfがMojo::Templateになるので注意
-        $c->render( inline => $ep, format => $format );
+
+    return unless ( -f $path );
+
+    my $partial = undef;
+    my (undef, undef, undef, $format, $handler) = _fileparse($path);
+
+    if ($format  =~ qr/^epl?/) {
+        $format  = 'txt';
+        $handler = 'epl';
     }
+
+    if ( $handler && $handler eq 'epl' ) {
+        return
+            if ( $c->param('format') && $c->param('format') eq 'raw' );
+
+        my $source = _slurp($path);
+
+        $partial = $c->render(
+            inline  => _slurp($path),
+            partial => 1,
+        );
+    }
+
+    if ( $format =~ qr/^(md|mkdn|markdown)$/ ) {
+        my $text = ($partial)
+            ? $partial->to_string
+            : _slurp($path);
+
+        $partial = markdown($text);
+        $format  = 'html';
+    }
+
+    $c->render( text => $partial, format => $format )
+        if ( defined $partial );
+}
+
+sub _fileparse {
+    my $path = shift || return;
+
+    my ($basename, $dirname, $ext) = fileparse($path, qr/\..*$/);
+    my ($format, $handler);
+
+    my @parts = grep { $_ } split /\./, $ext;
+
+    $format  = pop @parts;
+
+    if (@parts) {
+        $handler = $format;
+        $format  = pop @parts;
+    }
+
+    return ($basename, $dirname, $ext, $format, $handler);
+}
+
+sub _slurp {
+    my $file = shift || return;
+    decode_utf8(slurp $file);
 }
 
 app->start;
