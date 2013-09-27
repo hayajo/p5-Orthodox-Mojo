@@ -21,38 +21,42 @@ use constant +{
   ],
 };
 
-sub form_label {
-  my ($param, $params, $v) = @_;
+{
+  no warnings qw/redefine/;
 
-  my $label = $params->{$param};
-  my $html  = "<label>${label}</label>";
+  sub form_label {
+    my ($param, $params, $v) = @_;
 
-  if ($v && $v->is_error($param)) {
-    my $error = shift $v->get_error_messages_from_param($param);
-    $html .= sprintf('<p class="text-error">%s</p>', $error);
+    my $label = $params->{$param};
+    my $html  = "<label>${label}</label>";
 
+    if ($v && $v->is_error($param)) {
+      my $error = shift $v->get_error_messages_from_param($param);
+      $html .= sprintf('<p class="text-error">%s</p>', $error);
+
+    }
+
+    return $html;
   }
 
-  return $html;
-}
+  sub syntax {
+    my ($in, $out, $err) = (Symbol::gensym(), Symbol::gensym(), Symbol::gensym());
 
-sub syntax {
-  my ($in, $out, $err) = (Symbol::gensym(), Symbol::gensym(), Symbol::gensym());
+    my $pid = IPC::Open3::open3($in, $out, $err, VIM() => @{ VIM_ARGS() });
 
-  my $pid = IPC::Open3::open3($in, $out, $err, VIM() => @{ VIM_ARGS() });
+    close ($in);
+    close ($out);
 
-  close ($in);
-  close ($out);
+    my $err_out = do { local $/; <$err> };
+    chomp $err_out;
 
-  my $err_out = do { local $/; <$err> };
-  chomp $err_out;
+    my $gotpid = waitpid($pid, 0);
 
-  my $gotpid = waitpid($pid, 0);
+    my $error = $? >> 8;
+    die $! if ($error);
 
-  my $error = $? >> 8;
-  die $! if ($error);
-
-  return [ map { m|([^/]+)\.vim$|; $1 } glob "${err_out}/syntax/*.vim" ];
+    return [ map { m|([^/]+)\.vim$|; $1 } glob "${err_out}/syntax/*.vim" ];
+  }
 }
 
 title "nopaste";
@@ -73,24 +77,23 @@ if ( $self->req->method eq 'POST' ) {
     body  => [qw/NOT_NULL/],
   );
   unless ($v->has_error) {
+    my $q  = $v->query;
     my $id = Data::GUID->new->as_base64_urlsafe;
 
-    my @binds = ();
-    push @binds, $id;
-    push @binds, $v->query->param('title');
-    push @binds, $v->query->param('filetype') || 'text';
-    push @binds, $v->query->param('body');
-    push @binds, Time::Piece::Plus->mysql_date;
+    push my @binds,
+      $id,
+      $q->param('title'),
+      $q->param('filetype') || 'text',
+      $q->param('body'),
+      Time::Piece::Plus->mysql_datetime;
 
     my $db  = $self->app->home->rel_file(DB);
     my $dbh = DBI->connect("dbi:SQLite:${db}", '', '');
 
     my $sth = $dbh->prepare(
-      'INSERT INTO entry (id, title, filetype, body, created_at) VALUES (?, ?, ?, ?, ?)'
+      'INSERT INTO entry(id, title, filetype, body, created_at) VALUES(?, ?, ?, ?, ?)'
     );
-    my $i = 1;
-    map { $sth->bind_param( $i++, $_ ) } @binds;
-    $sth->execute;
+    $sth->execute(@binds);
 
     $self->redirect_to($self->req->url->query(id => $id));
   }
@@ -101,14 +104,13 @@ elsif ( my $id = $self->req->query_params->param('id') ) {
 
   my $entry = $dbh->selectrow_hashref(
     "SELECT * FROM entry WHERE id = ?",
-    {},
-    $id,
+    {}, $id,
   );
 
   if ($entry) {
     $entry->{highlighted} = decode_utf8(
       Text::VimColor->new(
-        string   => encode_utf8($entry->{body}),
+        string   => $entry->{body},
         filetype => $entry->{filetype},
       )->html,
     );
@@ -120,8 +122,9 @@ elsif ( my $id = $self->req->query_params->param('id') ) {
 }
 
 %>
+
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ja">
 <head>
   <meta charset="UTF-8">
   <title><%= title %></title>
@@ -157,6 +160,11 @@ elsif ( my $id = $self->req->query_params->param('id') ) {
       <div class="row">
         <div class="span12">
           <h2><%= $entry->{title} %></h2>
+        </div>
+      </div>
+      <div class="row">
+        <div class="span12">
+          <p><%= $entry->{created_at} %></p>
         </div>
       </div>
       <div class="row">
