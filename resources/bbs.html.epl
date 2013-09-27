@@ -2,18 +2,19 @@
 use DBI;
 use Encode;
 title "Simple BBS";
-my $db    = $self->app->home->rel_file('db/bbs.db');
-my $dbh   = DBI->connect("dbi:SQLite:${db}", '', '');
+
+my $db  = $self->app->home->rel_file('db/bbs.db');
+my $dbh = DBI->connect( "dbi:SQLite:${db}", '', '' );
+
 if ( $self->req->method eq 'POST' ) {
     if ( $self->param('name') && $self->param('remenber') ) {
         $self->session( name => $self->param('name') );
     }
+
     if ( my $comment = $self->param('comment') ) {
         my $name = $self->param('name') || '名無しさん';
-        my $sth  = $dbh->prepare('insert into comments(name, `comment`) values(?, ?)');
-        my $i = 1;
-        map { $sth->bind_param( $i++, $_ ) } ( $name, $comment );
-        $sth->execute;
+        my $sth  = $dbh->prepare('INSERT INTO comments(name, `comment`) VALUES(?, ?)');
+        $sth->execute($name, $comment);
         $self->redirect_to( $self->req->url );
     }
 }
